@@ -103,7 +103,7 @@ try:
                 "ADC-Spannung": round(adc_voltage, 3),
                 "Sensor": round(voltage, 3),
                 "Feuchtigkeit": round(moisture, 1),
-                "name": "room",
+                "name": "hygrometer",
             }
             # A POST request to the API
             response = requests.post(
