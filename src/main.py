@@ -3,14 +3,19 @@
 import adafruit_ads1x15.ads1115 as ADS
 import board
 import busio
+import requests
 import time
 from adafruit_ads1x15.analog_in import AnalogIn
+
+# The API endpoint
+logstash_url = "http://logstash:5044"
 
 # ------------------------------------------------------------
 # Einstellungen
 # ------------------------------------------------------------
 
-MESSINTERVALL = 2.0  # Sekunden
+# 5 Minuten in Sekunden
+SENDEINTERVALL = 5 * 60
 
 # Spannungsteiler:
 # R1 = Widerstand von AOUT zum ADC
@@ -47,13 +52,12 @@ ads.gain = 1
 # ------------------------------------------------------------
 # Funktionen
 # ------------------------------------------------------------
-def sensor_voltage():
+def sensor_voltage(adc_voltage):
     """
-    Liest die Spannung am ADS1115 aus und rechnet
-    sie auf die ursprüngliche Sensor-Ausgangsspannung
+    Rechnet die am ADS1115 gemessene Spannung
+    auf die ursprüngliche Sensor-Ausgangsspannung
     zurück.
     """
-    adc_voltage = channel.voltage
     # Spannungsteiler zurückrechnen
     sensor_voltage = adc_voltage * (R1 + R2) / R2
     return sensor_voltage
@@ -88,16 +92,45 @@ print("ADS1115 gestartet")
 print()
 try:
     while True:
-        voltage = sensor_voltage()
-        moisture = moisture_percent(voltage)
-        print(
-            f"ADC: {channel.value:5d} | "
-            f"ADC-Spannung: {channel.voltage:.3f} V | "
-            f"Sensor: {voltage:.3f} V | "
-            f"Feuchtigkeit: {moisture:5.1f} %"
-        )
-        time.sleep(MESSINTERVALL)
+        try:
+            adc_value = channel.value
+            adc_voltage = channel.voltage
+            voltage = sensor_voltage(adc_voltage)
+            moisture = moisture_percent(voltage)
+
+            hygrometer_data = {
+                "ADC": adc_value,
+                "ADC-Spannung": round(adc_voltage, 3),
+                "Sensor": round(voltage, 3),
+                "Feuchtigkeit": round(moisture, 1),
+                "name": "room",
+            }
+            # A POST request to the API
+            response = requests.post(
+                logstash_url,
+                json=hygrometer_data,
+                timeout=10,
+            )
+            response.raise_for_status()
+            # docker logs
+            print(
+                f"ADC: {adc_value:5d} | "
+                f"ADC-Spannung: {adc_voltage:.3f} V | "
+                f"Sensor: {voltage:.3f} V | "
+                f"Feuchtigkeit: {moisture:5.1f} %"
+            )
+        except OSError as e:
+            # z.B. I2C-Aussetzer bei loser Verkabelung - Messung überspringen statt abzustürzen
+            print(f"Sensor-Fehler: {e}")
+        except requests.exceptions.RequestException as e:
+            # Logstash nicht erreichbar - lokale Messung trotzdem weiterlaufen lassen
+            print(f"Logstash-Fehler: {e}")
+
+        time.sleep(SENDEINTERVALL)
 
 except KeyboardInterrupt:
     print()
     print("Programm beendet.")
+
+finally:
+    i2c.deinit()
