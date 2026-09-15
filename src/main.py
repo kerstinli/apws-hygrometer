@@ -99,10 +99,10 @@ try:
             moisture = moisture_percent(voltage)
 
             hygrometer_data = {
-                "ADC": adc_value,
-                "ADC-Spannung": round(adc_voltage, 3),
-                "Sensor": round(voltage, 3),
-                "Feuchtigkeit": round(moisture, 1),
+                # "ADC": adc_value,
+                # "ADC-Spannung": round(adc_voltage, 3),
+                # "Sensor": round(voltage, 3),
+                "Moisture": round(moisture, 1),
                 "name": "hygrometer",
             }
             # A POST request to the API
@@ -114,10 +114,10 @@ try:
             response.raise_for_status()
             # docker logs
             print(
-                f"ADC: {adc_value:5d} | "
-                f"ADC-Spannung: {adc_voltage:.3f} V | "
-                f"Sensor: {voltage:.3f} V | "
-                f"Feuchtigkeit: {moisture:5.1f} %"
+                # f"ADC: {adc_value:5d} | "
+                # f"ADC-Spannung: {adc_voltage:.3f} V | "
+                # f"Sensor: {voltage:.3f} V | "
+                f"Moisture: {moisture:5.1f} %"
             )
         except OSError as e:
             # z.B. I2C-Aussetzer bei loser Verkabelung - Messung überspringen statt abzustürzen
