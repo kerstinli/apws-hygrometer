@@ -7,7 +7,7 @@ WORKDIR  /hygrometer
 
 RUN uv init
 
-RUN uv add adafruit-circuitpython-ads1x15 lgpio
+RUN uv add adafruit-circuitpython-ads1x15 lgpio requests
 
 COPY main.py .
 
