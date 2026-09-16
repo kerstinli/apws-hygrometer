@@ -102,7 +102,7 @@ try:
                 # "ADC": adc_value,
                 # "ADC-Spannung": round(adc_voltage, 3),
                 # "Sensor": round(voltage, 3),
-                "Moisture": round(moisture, 1),
+                "moisture": round(moisture, 1),
                 "name": "hygrometer",
             }
             # A POST request to the API
