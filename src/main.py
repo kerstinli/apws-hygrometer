@@ -37,7 +37,7 @@ R2 = 20_000.0
 # For this sensor type, "dry" typically has
 # a higher voltage than "wet".
 SENSOR_DRY = 3.0
-SENSOR_WET = 1.2
+SENSOR_WET = 1.3
 
 # ------------------------------------------------------------
 # Initialize I2C
