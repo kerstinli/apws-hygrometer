@@ -1,135 +1,130 @@
 #!/usr/bin/env python3
 
+import argparse
+import logging
+import os
+import sys
+import time
+
 import adafruit_ads1x15.ads1115 as ADS
 import board
 import busio
 import requests
-import time
 from adafruit_ads1x15.analog_in import AnalogIn
 
-# The API endpoint
-logstash_url = "http://logstash:5044"
+# Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
+)
 
-# ------------------------------------------------------------
-# Einstellungen
-# ------------------------------------------------------------
+# 5 minutes
+ticktack = 5 * 60
 
-# 5 Minuten in Sekunden
-SENDEINTERVALL = 5 * 60
-
-# Spannungsteiler:
-# R1 = Widerstand von AOUT zum ADC
-# R2 = Widerstand vom ADC nach GND
+# Voltage divider:
+# R1 = resistor from AOUT to ADC
+# R2 = resistor from ADC to GND
 R1 = 10_000.0
 R2 = 20_000.0
 
-# Kalibrierung
-# Diese Werte später an deinen Sensor anpassen.
+# Calibration
+# Adjust these values to your sensor later.
 #
-# SENSOR_TROCKEN = Spannung bei trockenem Substrat
-# SENSOR_NASS = Spannung bei sehr nassem Substrat
+# SENSOR_DRY = voltage at dry substrate
+# SENSOR_WET = voltage at very wet substrate
 #
-# Bei diesem Sensortyp ist "trocken" typischerweise
-# eine höhere Spannung als "nass".
-SENSOR_TROCKEN = 3.0
-SENSOR_NASS = 1.2
+# For this sensor type, "dry" typically has
+# a higher voltage than "wet".
+SENSOR_DRY = 3.0
+SENSOR_WET = 1.3
 
 # ------------------------------------------------------------
-# I2C initialisieren
+# Initialize I2C
 # ------------------------------------------------------------
 i2c = busio.I2C(board.SCL, board.SDA)
 ads = ADS.ADS1115(i2c)
 
-# ADS1115 Eingang A0
+# ADS1115 input A0
 channel = AnalogIn(ads, 0)
 
-# Messbereich ±4.096 V
-# Da unser Spannungsteiler maximal ca. 3.33 V liefert,
-# ist dieser Bereich gut geeignet.
+# Measurement range ±4.096 V
+# Since our voltage divider delivers max approx. 3.33 V,
+# this range is well suited.
 ads.gain = 1
 
 
-# ------------------------------------------------------------
-# Funktionen
-# ------------------------------------------------------------
-def sensor_voltage(adc_voltage):
-    """
-    Rechnet die am ADS1115 gemessene Spannung
-    auf die ursprüngliche Sensor-Ausgangsspannung
-    zurück.
-    """
-    # Spannungsteiler zurückrechnen
-    sensor_voltage = adc_voltage * (R1 + R2) / R2
-    return sensor_voltage
-
 def moisture_percent(voltage):
     """
-    Berechnet einen einfachen Feuchtigkeitswert
-    von 0 bis 100 %.
-    0 % = trocken
-    100 % = nass
+    Calculates a simple moisture value
+    from 0 to 100 %.
+    0 % = dry
+    100 % = wet
     """
 
-    # Umrechnung:
+    # Conversion:
     #
-    # SENSOR_TROCKEN -> 0 %
-    # SENSOR_NASS -> 100 %
+    # SENSOR_DRY -> 0 %
+    # SENSOR_WET -> 100 %
     percent = (
-            (SENSOR_TROCKEN - voltage)
-            / (SENSOR_TROCKEN - SENSOR_NASS)
+            (SENSOR_DRY - voltage)
+            / (SENSOR_DRY - SENSOR_WET)
             * 100
     )
 
-    # Auf 0...100 % begrenzen
+    # Limit to 0...100 %
     percent = max(0, min(100, percent))
     return percent
 
-# ------------------------------------------------------------
-# Hauptprogramm
-# ------------------------------------------------------------
-print("AZ-Delivery Hygrometer V1.2")
-print("ADS1115 gestartet")
-print()
-try:
-    while True:
-        try:
-            adc_value = channel.value
-            adc_voltage = channel.voltage
-            voltage = sensor_voltage(adc_voltage)
-            moisture = moisture_percent(voltage)
 
-            hygrometer_data = {
-                # "ADC": adc_value,
-                # "ADC-Spannung": round(adc_voltage, 3),
-                # "Sensor": round(voltage, 3),
-                "moisture": round(moisture, 1),
-            }
-            # A POST request to the API
-            response = requests.post(
-                logstash_url,
-                json=hygrometer_data,
-                timeout=10,
-            )
-            response.raise_for_status()
-            # docker logs
-            print(
-                # f"ADC: {adc_value:5d} | "
-                # f"ADC-Spannung: {adc_voltage:.3f} V | "
-                # f"Sensor: {voltage:.3f} V | "
-                f"Moisture: {moisture:5.1f} %"
-            )
-        except OSError as e:
-            # z.B. I2C-Aussetzer bei loser Verkabelung - Messung überspringen statt abzustürzen
-            print(f"Sensor-Fehler: {e}")
-        except requests.exceptions.RequestException as e:
-            # Logstash nicht erreichbar - lokale Messung trotzdem weiterlaufen lassen
-            print(f"Logstash-Fehler: {e}")
+def execute(logstash_url: str) -> None:
+    logging.info("AZ-Delivery Hygrometer V1.2")
+    try:
+        while True:
+            try:
+                adc_value = channel.value
+                adc_voltage = channel.voltage
+                voltage = adc_voltage * (R1 + R2) / R2
 
-        time.sleep(SENDEINTERVALL)
+                logging.info(f"ADC: {adc_value:5.1f} %")
+                logging.info(f"ADC voltage: {adc_voltage:5.1f} %")
+                logging.info(f"Voltage: {voltage:5.1f} %")
 
-except KeyboardInterrupt:
-    print()
-    print("Programm beendet.")
+                moisture = moisture_percent(voltage)
 
-finally:
-    i2c.deinit()
+                hygrometer_data = {
+                    "moisture": round(moisture, 1),
+                }
+                response = requests.post(
+                    logstash_url,
+                    json=hygrometer_data,
+                    timeout=10,
+                )
+                response.raise_for_status()
+            except RuntimeError as error:
+                logging.error(f"Error getting values from sensor: {error}")
+            except requests.exceptions.RequestException as error:
+                logging.error(f"Error sending data to Logstash: {error}")
+
+            time.sleep(ticktack)
+
+    except KeyboardInterrupt:
+        logging.info("Cancel execution...")
+
+    finally:
+        i2c.deinit()
+
+if __name__ == "__main__":
+    # The API endpoint - can be overridden by environment variable or command-line argument
+    logstash_url: str = os.getenv("LOGSTASH_URL", "http://logstash:5044")
+
+    parser = argparse.ArgumentParser(description="DHT11 Sensor to Logstash")
+    parser.add_argument(
+        "--logstash-url",
+        help="Logstash endpoint URL (overrides LOGSTASH_URL environment variable)",
+    )
+    args = parser.parse_args()
+    if args.logstash_url:
+        logstash_url = args.logstash_url
+
+    execute(logstash_url)
