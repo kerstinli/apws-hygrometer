@@ -11,10 +11,9 @@ Logstash as JSON over HTTP.
 2. The measured ADC voltage is scaled back to the sensor's original output
    voltage.
 3. That voltage is mapped to a 0–100 % moisture value using two calibration
-   points (`SENSOR_TROCKEN` = dry, `SENSOR_NASS` = wet), clamped to the
-   0–100 range.
-4. Every `SENDEINTERVALL` seconds (default: 5 minutes), the moisture reading
-   is POSTed as JSON to `logstash_url`.
+   points (`SENSOR_DRY`, `SENSOR_WET`), clamped to the 0–100 range.
+4. Every `ticktack` seconds (default: 5 minutes), the moisture reading is
+   POSTed as JSON to the Logstash endpoint.
 5. I2C errors and failed HTTP requests are logged and skipped so the loop
    keeps running instead of crashing.
 
@@ -27,17 +26,15 @@ Logstash as JSON over HTTP.
 
 ## Configuration
 
-All configuration is done via constants at the top of `src/main.py`:
+| Setting | Source | Purpose |
+|---|---|---|
+| Logstash URL | `LOGSTASH_URL` env var, or `--logstash-url` CLI arg (overrides env var) | HTTP endpoint the JSON payload is sent to. Default: `http://logstash:5044` |
+| `ticktack` | constant in `src/main.py` | Measurement/send interval in seconds (default 300) |
+| `R1`, `R2` | constants in `src/main.py` | Voltage divider resistor values (Ω) |
+| `SENSOR_DRY` | constant in `src/main.py` | Sensor voltage at 0 % (dry) moisture |
+| `SENSOR_WET` | constant in `src/main.py` | Sensor voltage at 100 % (wet) moisture |
 
-| Constant | Purpose |
-|---|---|
-| `logstash_url` | HTTP endpoint the JSON payload is sent to |
-| `SENDEINTERVALL` | Measurement/send interval in seconds |
-| `R1`, `R2` | Voltage divider resistor values (Ω) |
-| `SENSOR_TROCKEN` | Sensor voltage at 0 % (dry) moisture |
-| `SENSOR_NASS` | Sensor voltage at 100 % (wet) moisture |
-
-Calibrate `SENSOR_TROCKEN`/`SENSOR_NASS` for your specific sensor.
+Calibrate `SENSOR_DRY`/`SENSOR_WET` for your specific sensor.
 
 ## Running
 
@@ -46,7 +43,7 @@ Calibrate `SENSOR_TROCKEN`/`SENSOR_NASS` for your specific sensor.
 ```bash
 cd src
 docker build -t apws-hygrometer .
-docker run --device /dev/i2c-1 apws-hygrometer
+docker run --device /dev/i2c-1 -e LOGSTASH_URL=http://logstash:5044 apws-hygrometer
 ```
 
 The image is based on `uv` + Python 3.12 and installs
@@ -56,7 +53,7 @@ The image is based on `uv` + Python 3.12 and installs
 
 ```bash
 uv add adafruit-circuitpython-ads1x15 lgpio requests
-uv run src/main.py
+uv run src/main.py --logstash-url http://logstash:5044
 ```
 
 Requires I2C access to the ADS1115 (e.g. run on a Raspberry Pi with I2C
@@ -64,7 +61,8 @@ enabled).
 
 ## Output
 
-Each cycle prints the current moisture reading to stdout and sends:
+Each cycle logs the current ADC/voltage/moisture readings to stdout and
+sends:
 
 ```json
 { "moisture": 42.3 }
